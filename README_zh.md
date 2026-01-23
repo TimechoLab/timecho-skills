@@ -18,6 +18,7 @@
 **目的**: 提供跨多种编程语言和数据模型连接和使用 Apache IoTDB 的综合指南。
 
 **特性**:
+
 - 多语言支持(Java、Python、C++、REST API)
 - 双数据模型支持(树模型 & 表模型)
 - 连接方式:
@@ -31,6 +32,7 @@
 - 集成示例(Spring Boot、MyBatis)
 
 **使用场景**:
+
 - 建立 IoTDB 数据库连接
 - 实现数据插入和查询
 - 配置数据库会话
@@ -44,6 +46,7 @@
 **目的**: 用于处理 Apache TsFile 格式时序数据存储和处理的工具包。
 
 **特性**:
+
 - 多语言支持(Java、Python、C++、C)
 - TsFile 格式的读写操作
 - 模式设计和优化
@@ -52,6 +55,7 @@
 - 与大数据框架集成
 
 **使用场景**:
+
 - 读写 TsFile 文件
 - 时序数据存储优化
 - 物联网数据处理管道
@@ -67,6 +71,7 @@
 这些技能设计用于加载到 AI 助手系统中(如 Claude with MCP 或类似框架),以提供关于 IoTDB 和 TsFile 的专业知识。
 
 每个技能包含:
+
 - `SKILL.md` - 主技能定义和文档
 - `references/` - 详细的技术参考和示例
 - `assets/` - 代码模板和配置文件
@@ -157,12 +162,14 @@ with TsFileReader("data.tsfile") as reader:
 ## 📋 环境要求
 
 ### IoTDB 技能
+
 - Java: IoTDB Java API (SessionPool/JDBC)
 - Python: `apache-iotdb` 包
 - C++: IoTDB C++ 客户端库
 - REST: HTTP 客户端(任何语言)
 
 ### TsFile 技能
+
 - Java: Maven/Gradle 及 TsFile 依赖
 - Python: TsFile Python 包(需要 C++ 构建)
 - C++: CMake 和 TsFile C++ 库
@@ -171,6 +178,7 @@ with TsFileReader("data.tsfile") as reader:
 ## 🤝 贡献
 
 欢迎贡献! 请确保:
+
 - 代码示例遵循最佳实践
 - 文档清晰准确
 - 示例经过测试且可运行
@@ -191,20 +199,25 @@ Apache IoTDB 和 Apache TsFile 都是 Apache 软件基金会项目,采用 Apache
 ## 💡 使用场景
 
 ### 物联网监控
+
 使用 IoTDB 技能构建实时监控系统,用于传感器、设备和工业设备的高吞吐量数据采集。
 
 ### 数据分析
+
 利用两个技能处理和分析大规模时序数据集,具有高效的存储和查询能力。
 
 ### 系统集成
+
 使用 IoTDB 技能中提供的 Spring Boot 和 MyBatis 集成模式,将 IoTDB 集成到现有 Java 应用程序中。
 
 ### 数据交换
+
 使用 TsFile 技能以便携、高效的列式格式导出、共享和归档时序数据。
 
 ## 📞 支持
 
 如有问题:
+
 - **这些技能相关**: 在本仓库中提交 issue
 - **Apache IoTDB**: 访问 [IoTDB GitHub](https://github.com/apache/iotdb)
 - **Apache TsFile**: 访问 [TsFile GitHub](https://github.com/apache/tsfile)

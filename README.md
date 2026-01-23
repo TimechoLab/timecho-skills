@@ -18,6 +18,7 @@ This repository contains two specialized skills designed to enhance AI assistant
 **Purpose**: Comprehensive guide for connecting to and working with Apache IoTDB across multiple programming languages and data models.
 
 **Features**:
+
 - Multi-language support (Java, Python, C++, REST API)
 - Dual data model support (Tree Model & Table Model)
 - Connection methods:
@@ -31,6 +32,7 @@ This repository contains two specialized skills designed to enhance AI assistant
 - Integration examples (Spring Boot, MyBatis)
 
 **Use Cases**:
+
 - Establishing IoTDB database connections
 - Implementing data insertion and querying
 - Configuring database sessions
@@ -44,6 +46,7 @@ This repository contains two specialized skills designed to enhance AI assistant
 **Purpose**: Toolkit for working with Apache TsFile format for time-series data storage and processing.
 
 **Features**:
+
 - Multi-language support (Java, Python, C++, C)
 - Read/write operations for TsFile format
 - Schema design and optimization
@@ -52,6 +55,7 @@ This repository contains two specialized skills designed to enhance AI assistant
 - Integration with big data frameworks
 
 **Use Cases**:
+
 - Reading and writing TsFile files
 - Time-series data storage optimization
 - IoT data processing pipelines
@@ -67,6 +71,7 @@ This repository contains two specialized skills designed to enhance AI assistant
 These skills are designed to be loaded into AI assistant systems (like Claude with MCP or similar frameworks) to provide specialized knowledge about IoTDB and TsFile.
 
 Each skill contains:
+
 - `SKILL.md` - Main skill definition and documentation
 - `references/` - Detailed technical references and examples
 - `assets/` - Code templates and configuration files
@@ -157,12 +162,14 @@ with TsFileReader("data.tsfile") as reader:
 ## 📋 Requirements
 
 ### IoTDB Skill
+
 - Java: IoTDB Java API (SessionPool/JDBC)
 - Python: `apache-iotdb` package
 - C++: IoTDB C++ client library
 - REST: HTTP client (any language)
 
 ### TsFile Skill
+
 - Java: Maven/Gradle with TsFile dependencies
 - Python: TsFile Python package (requires C++ build)
 - C++: CMake and TsFile C++ library
@@ -171,6 +178,7 @@ with TsFileReader("data.tsfile") as reader:
 ## 🤝 Contributing
 
 Contributions are welcome! Please ensure:
+
 - Code examples follow best practices
 - Documentation is clear and accurate
 - Examples are tested and working
@@ -191,20 +199,25 @@ Both Apache IoTDB and Apache TsFile are Apache Software Foundation projects lice
 ## 💡 Use Cases
 
 ### IoT Monitoring
+
 Use IoTDB skill to build real-time monitoring systems for sensors, devices, and industrial equipment with high-throughput data ingestion.
 
 ### Data Analytics
+
 Leverage both skills to process and analyze large-scale time-series datasets with efficient storage and query capabilities.
 
 ### System Integration
+
 Integrate IoTDB with existing Java applications using Spring Boot and MyBatis integration patterns provided in the IoTDB skill.
 
 ### Data Exchange
+
 Use TsFile skill to export, share, and archive time-series data in a portable, efficient columnar format.
 
 ## 📞 Support
 
 For issues related to:
+
 - **These skills**: Open an issue in this repository
 - **Apache IoTDB**: Visit [IoTDB GitHub](https://github.com/apache/iotdb)
 - **Apache TsFile**: Visit [TsFile GitHub](https://github.com/apache/tsfile)
