@@ -8,8 +8,8 @@ A comprehensive collection of AI assistant skills for working with Apache IoTDB 
 
 This repository contains two specialized skills designed to enhance AI assistant capabilities when helping developers work with:
 
-1. **IoTDB** - Enterprise-grade time-series database
-2. **TsFile** - Columnar storage format for time-series data
+1. **IoTDB** - A low-cost, high-performance IoT-native time-series database
+2. **TsFile** - Open-source File Format for Industrial Time-Series Datasets
 
 ## 🎯 Skills Included
 
