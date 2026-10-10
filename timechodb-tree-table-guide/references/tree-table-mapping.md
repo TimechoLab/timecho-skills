@@ -30,8 +30,12 @@ Define:
 
 ```text
 Tree:  root.factory.beijing.line1.device7.temperature
-                 |       |     |       |
-Table: region TAG, line TAG, device TAG, temperature FIELD
+
+  root.factory   -> database (confirm this boundary first)
+  beijing        -> region      TAG
+  line1          -> line        TAG
+  device7        -> device      TAG
+  temperature    -> temperature FIELD
 ```
 
 This is a design mapping, not executable DDL. Confirm whether `factory` is the

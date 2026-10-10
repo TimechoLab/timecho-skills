@@ -36,8 +36,10 @@ WHERE time >= <start_timestamp> AND time < <end_timestamp>
 GROUP BY device_id;
 ```
 
-The Table model creates the `time` column implicitly; do not declare it in
-`CREATE TABLE`. It remains available in `INSERT`, `SELECT`, and time predicates.
+The Table model adds a `time` column automatically when `CREATE TABLE` omits a
+TIME column; declaring it explicitly (`time TIMESTAMP TIME`) is also valid, and
+since V2.0.8 the TIME column may use a custom name. Use the table's actual TIME
+column name in `INSERT`, `SELECT`, and time predicates.
 Select the intended Table database using the target runtime's supported context
 or SQL mechanism before execution. Do not assume qualification is portable.
 

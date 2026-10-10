@@ -23,8 +23,8 @@ Keep model choice explicit; do not translate syntax or metadata implicitly.
 3. Identify stable device identity, mutable attributes, measurements, and time
    semantics.
 4. Select Tree or Table from the workload's write and query requirements.
-5. Generate model-specific schema or SQL with `timechodb-schema-gen` or
-   `timechodb-sql-dev`.
+5. Generate model-specific schema or SQL, using
+   [syntax-comparison.md](references/syntax-comparison.md) as the baseline.
 6. If migration or a cross-model view is requested, verify the exact feature and
    syntax against the target version before producing DDL.
 
