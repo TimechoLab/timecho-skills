@@ -131,7 +131,8 @@ cat /proc/<pid>/task/*/comm | sort | uniq -c | sort -rn | head   # 线程构成
 ```
 
 **处理完必须确认节点状态。** WAL 写失败会经 `handleUnrecoverableError` 把节点置为 ReadOnly，
-且不一定自动恢复：只有 DISK_FULL 会自动恢复；只读原因被锁定为 `UnrecoverableError` 时，
+且不一定自动恢复：只有 DISK_FULL 会自动恢复；WAL 在独立磁盘上、或属于非空间类 I/O 错误时，
+只读原因为空，同样不会自动恢复；只读原因被锁定为 `UnrecoverableError` 时，
 `SET SYSTEM TO RUNNING` 之后下一次 sync 又会把节点打回只读，只能重启。
 所以报告里要加一步：用 `SHOW DATANODES` / `SHOW CLUSTER DETAILS` 确认节点已回到 `Running`；
 仍是 `ReadOnly` 时，按版本给出 `SET SYSTEM TO RUNNING` 或重启步骤。
