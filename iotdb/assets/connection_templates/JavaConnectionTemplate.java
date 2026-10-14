@@ -19,394 +19,189 @@
 
 package com.example.iotdb;
 
-import org.apache.iotdb.session.Session;
-import org.apache.iotdb.session.SessionPool;
 import org.apache.iotdb.isession.ITableSession;
-import org.apache.iotdb.session.TableSessionBuilder;
 import org.apache.iotdb.isession.SessionDataSet;
-import org.apache.iotdb.tsfile.read.common.DataIterator;
+import org.apache.iotdb.isession.pool.ITableSessionPool;
+import org.apache.iotdb.isession.pool.SessionDataSetWrapper;
 import org.apache.iotdb.rpc.IoTDBConnectionException;
 import org.apache.iotdb.rpc.StatementExecutionException;
+import org.apache.iotdb.session.pool.SessionPool;
+import org.apache.iotdb.session.pool.TableSessionPoolBuilder;
 
-import org.apache.tsfile.enums.TSDataType;
 import org.apache.tsfile.enums.ColumnCategory;
-import org.apache.tsfile.file.metadata.enums.TSEncoding;
-import org.apache.tsfile.file.metadata.enums.CompressionType;
+import org.apache.tsfile.enums.TSDataType;
 import org.apache.tsfile.write.record.Tablet;
 import org.apache.tsfile.write.schema.IMeasurementSchema;
 import org.apache.tsfile.write.schema.MeasurementSchema;
 
-import java.util.*;
+import java.util.Arrays;
+import java.util.List;
 
 /**
- * IoTDB Java Connection Template
+ * IoTDB connection template (IoTDB/TimechoDB V2.0.x, dependency org.apache.iotdb:iotdb-session).
  *
- * This template provides ready-to-use connection patterns for IoTDB:
- * - SessionPool connection (RECOMMENDED for production)
- * - Iterator-based data reading (CRITICAL for memory efficiency)
- * - Tree Model and Table Model examples
- * - Bulk insertion using tablets
- * - Error handling and retry patterns
+ * <ul>
+ *   <li>Tree model: one {@link SessionPool} per application.
+ *   <li>Table model: one {@link ITableSessionPool} per application; borrow an {@link ITableSession}
+ *       per unit of work and close it to return it to the pool.
+ *   <li>Close every result set; close the pools on shutdown.
+ * </ul>
+ *
+ * <p>Connection settings come from the environment: IOTDB_NODE_URLS (comma separated, default
+ * 127.0.0.1:6667), IOTDB_USER (default root), IOTDB_PASSWORD (default root; TimechoDB V2.0.6.1+ uses
+ * TimechoDB@2021).
  */
-public class IoTDBConnectionTemplate {
+public final class JavaConnectionTemplate implements AutoCloseable {
 
-    // Configuration
-    private static final String HOST = "127.0.0.1";
-    private static final int PORT = 6667;
-    private static final String USERNAME = "root";
-    private static final String PASSWORD = "root";
+    private final SessionPool treePool;
+    private final ITableSessionPool tablePool;
 
-    /**
-     * 🚀 RECOMMENDED: SessionPool connection example with iterator
-     */
-    public static void sessionPoolExample() {
-        SessionPool sessionPool = new SessionPool.Builder()
-            .host(HOST)
-            .port(PORT)
-            .user(USERNAME)
-            .password(PASSWORD)
-            .maxSize(10)  // Connection pool size
+    public JavaConnectionTemplate(List<String> nodeUrls, String user, String password, int maxSize) {
+        this.treePool = new SessionPool.Builder()
+            .nodeUrls(nodeUrls)
+            .user(user)
+            .password(password)
+            .maxSize(maxSize)
+            .waitToGetSessionTimeoutInMs(30_000)
             .build();
-
-        try {
-            // Create database and timeseries
-            sessionPool.createDatabase("root.example");
-
-            sessionPool.createTimeseries(
-                "root.example.device1.temperature",
-                TSDataType.FLOAT,
-                TSEncoding.RLE,
-                CompressionType.SNAPPY
-            );
-
-            sessionPool.createTimeseries(
-                "root.example.device1.humidity",
-                TSDataType.FLOAT,
-                TSEncoding.RLE,
-                CompressionType.SNAPPY
-            );
-
-            // Insert single record
-            sessionPool.insertRecord(
-                "root.example.device1",
-                System.currentTimeMillis(),
-                Arrays.asList("temperature", "humidity"),
-                Arrays.asList(TSDataType.FLOAT, TSDataType.FLOAT),
-                Arrays.asList(25.5f, 60.0f)
-            );
-
-            // ⭐ CRITICAL: Always use iterator for reading data (memory efficient)
-            try (SessionDataSet dataSet = sessionPool.executeQueryStatement(
-                    "SELECT * FROM root.example.device1")) {
-
-                DataIterator iterator = dataSet.iterator();
-                System.out.println("Reading data with iterator:");
-                System.out.println("Time\t\t\tTemperature\tHumidity");
-                System.out.println("-".repeat(50));
-
-                while (iterator.next()) {
-                    long timestamp = iterator.getLong(1);
-                    float temperature = iterator.getFloat(2);
-                    float humidity = iterator.getFloat(3);
-
-                    System.out.printf("%d\t%.2f\t\t%.2f%n",
-                        timestamp, temperature, humidity);
-                }
-            } // Auto-close dataset
-
-        } catch (Exception e) {
-            System.err.println("Error: " + e.getMessage());
-        } finally {
-            sessionPool.close();
-        }
-    }
-
-    /**
-     * Table Model connection example with iterator
-     */
-    public static void tableModelExample() {
-        try (ITableSession session = new TableSessionBuilder()
-                .nodeUrls(Collections.singletonList(HOST + ":" + PORT))
-                .username(USERNAME)
-                .password(PASSWORD)
-                .build()) {
-
-            // Create database and table
-            session.executeNonQueryStatement("CREATE DATABASE example_db");
-            session.executeNonQueryStatement("USE example_db");
-
-            session.executeNonQueryStatement("""
-                CREATE TABLE sensors(
-                    region_id STRING TAG,
-                    device_id STRING TAG,
-                    device_type STRING ATTRIBUTE,
-                    temperature FLOAT FIELD,
-                    humidity DOUBLE FIELD
-                ) WITH (TTL=7200000)
-                """);
-
-            // Insert data using tablet
-            List<String> columnNames = Arrays.asList(
-                "region_id", "device_id", "device_type", "temperature", "humidity"
-            );
-
-            List<TSDataType> dataTypes = Arrays.asList(
-                TSDataType.STRING, TSDataType.STRING, TSDataType.STRING,
-                TSDataType.FLOAT, TSDataType.DOUBLE
-            );
-
-            List<ColumnCategory> columnTypes = Arrays.asList(
-                ColumnCategory.TAG, ColumnCategory.TAG, ColumnCategory.ATTRIBUTE,
-                ColumnCategory.FIELD, ColumnCategory.FIELD
-            );
-
-            Tablet tablet = new Tablet("sensors", columnNames, dataTypes, columnTypes, 10);
-
-            // Add sample data
-            int rowIndex = tablet.getRowSize();
-            tablet.addTimestamp(rowIndex, System.currentTimeMillis());
-            tablet.addValue("region_id", rowIndex, "region_1");
-            tablet.addValue("device_id", rowIndex, "device_001");
-            tablet.addValue("device_type", rowIndex, "temperature_sensor");
-            tablet.addValue("temperature", rowIndex, 25.5f);
-            tablet.addValue("humidity", rowIndex, 60.0);
-
-            session.insert(tablet);
-
-            // ⭐ CRITICAL: Always use iterator for reading data
-            try (SessionDataSet dataSet = session.executeQueryStatement(
-                    "SELECT * FROM sensors WHERE region_id = 'region_1'")) {
-
-                DataIterator iterator = dataSet.iterator();
-                System.out.println("Table Model Results:");
-                System.out.println("Region\tDevice\tType\t\tTemp\tHumidity");
-                System.out.println("-".repeat(60));
-
-                while (iterator.next()) {
-                    String regionId = iterator.getString("region_id");
-                    String deviceId = iterator.getString("device_id");
-                    String deviceType = iterator.getString("device_type");
-                    float temperature = iterator.getFloat("temperature");
-                    double humidity = iterator.getDouble("humidity");
-
-                    System.out.printf("%s\t%s\t%s\t%.1f\t%.1f%n",
-                        regionId, deviceId, deviceType, temperature, humidity);
-                }
-            } // Auto-close dataset
-
-        } catch (Exception e) {
-            System.err.println("Error: " + e.getMessage());
-        }
-    }
-
-    /**
-     * Alternative: Basic Session connection (SessionPool preferred)
-     */
-    public static void basicSessionExample() {
-        Session session = new Session.Builder()
-            .host(HOST)
-            .port(PORT)
-            .username(USERNAME)
-            .password(PASSWORD)
+        // No default database here, so this pool can also run CREATE DATABASE.
+        this.tablePool = new TableSessionPoolBuilder()
+            .nodeUrls(nodeUrls)
+            .user(user)
+            .password(password)
+            .maxSize(maxSize)
+            .waitToGetSessionTimeoutInMs(30_000)
             .build();
+    }
 
-        try {
-            // Connect
-            session.open(false);
-            System.out.println("Connected to IoTDB");
+    public static JavaConnectionTemplate fromEnvironment() {
+        String urls = System.getenv().getOrDefault("IOTDB_NODE_URLS", "127.0.0.1:6667");
+        return new JavaConnectionTemplate(
+            Arrays.asList(urls.split(",")),
+            System.getenv().getOrDefault("IOTDB_USER", "root"),
+            System.getenv().getOrDefault("IOTDB_PASSWORD", "root"),
+            10);
+    }
 
-            // Create database
-            session.createDatabase("root.basic_example");
+    // ---------------------------------------------------------------- tree model
 
-            // Create timeseries
-            session.createTimeseries(
-                "root.basic_example.device1.temperature",
-                TSDataType.FLOAT,
-                TSEncoding.RLE,
-                CompressionType.SNAPPY
-            );
+    /** Writes rows of one device; timeseries are auto-created if they do not exist. */
+    public void writeTree(String deviceId, long startTime, int rows)
+            throws IoTDBConnectionException, StatementExecutionException {
+        List<IMeasurementSchema> schemas = Arrays.asList(
+            new MeasurementSchema("temperature", TSDataType.FLOAT),
+            new MeasurementSchema("humidity", TSDataType.FLOAT));
+        Tablet tablet = new Tablet(deviceId, schemas, 1000);
+        for (int i = 0; i < rows; i++) {
+            int row = tablet.getRowSize();
+            tablet.addTimestamp(row, startTime + i * 1000L);
+            tablet.addValue("temperature", row, 20.0f + (i % 100) / 10.0f);
+            tablet.addValue("humidity", row, 60.0f);
+            if (tablet.getRowSize() == tablet.getMaxRowNumber()) {
+                treePool.insertTablet(tablet);
+                tablet.reset();
+            }
+        }
+        if (tablet.getRowSize() != 0) {
+            treePool.insertTablet(tablet);
+            tablet.reset();
+        }
+    }
 
-            // Insert single record
-            session.insertRecord(
-                "root.basic_example.device1",
-                System.currentTimeMillis(),
-                Arrays.asList("temperature"),
-                Arrays.asList(TSDataType.FLOAT),
-                Arrays.asList(25.5f)
-            );
+    /** Reads a time range; the wrapper must be closed to return the session to the pool. */
+    public int readTree(String deviceId, long from, long to)
+            throws IoTDBConnectionException, StatementExecutionException {
+        String sql = String.format(
+            "SELECT temperature FROM %s WHERE time >= %d AND time < %d", deviceId, from, to);
+        int count = 0;
+        try (SessionDataSetWrapper wrapper = treePool.executeQueryStatement(sql)) {
+            SessionDataSet.DataIterator it = wrapper.iterator();
+            while (it.next()) {
+                long time = it.getLong("Time");
+                float temperature = it.getFloat(deviceId + ".temperature");
+                count++;
+            }
+        }
+        return count;
+    }
 
-            // ⭐ CRITICAL: Always use iterator for reading data
-            try (SessionDataSet dataSet = session.executeQueryStatement(
-                    "SELECT * FROM root.basic_example.device1")) {
+    // ---------------------------------------------------------------- table model
 
-                DataIterator iterator = dataSet.iterator();
-                System.out.println("Basic Session Results:");
+    public void createTableSchema() throws IoTDBConnectionException, StatementExecutionException {
+        try (ITableSession session = tablePool.getSession()) {
+            session.executeNonQueryStatement("CREATE DATABASE IF NOT EXISTS factory");
+            session.executeNonQueryStatement(
+                "CREATE TABLE IF NOT EXISTS factory.sensors ("
+                    + "region STRING TAG, device_id STRING TAG, model STRING ATTRIBUTE, "
+                    + "temperature FLOAT FIELD, humidity DOUBLE FIELD) WITH (TTL=31536000000)");
+        }
+    }
 
-                while (iterator.next()) {
-                    System.out.printf("Time: %d, Temperature: %.2f%n",
-                        iterator.getLong(1), iterator.getFloat(2));
+    public void writeTable(String region, String deviceId, long startTime, int rows)
+            throws IoTDBConnectionException, StatementExecutionException {
+        List<String> columns = Arrays.asList("region", "device_id", "model", "temperature", "humidity");
+        List<TSDataType> types = Arrays.asList(
+            TSDataType.STRING, TSDataType.STRING, TSDataType.STRING, TSDataType.FLOAT, TSDataType.DOUBLE);
+        List<ColumnCategory> categories = Arrays.asList(
+            ColumnCategory.TAG, ColumnCategory.TAG, ColumnCategory.ATTRIBUTE,
+            ColumnCategory.FIELD, ColumnCategory.FIELD);
+
+        try (ITableSession session = tablePool.getSession()) {
+            session.executeNonQueryStatement("USE factory");   // lasts until the session is returned
+            Tablet tablet = new Tablet("sensors", columns, types, categories, 1000);
+            for (int i = 0; i < rows; i++) {
+                int row = tablet.getRowSize();
+                tablet.addTimestamp(row, startTime + i * 1000L);
+                tablet.addValue("region", row, region);
+                tablet.addValue("device_id", row, deviceId);
+                tablet.addValue("model", row, "A");
+                tablet.addValue("temperature", row, 20.0f + (i % 100) / 10.0f);
+                tablet.addValue("humidity", row, 60.0);
+                if (tablet.getRowSize() == tablet.getMaxRowNumber()) {
+                    session.insert(tablet);
+                    tablet.reset();
                 }
-            } // Auto-close dataset
-
-        } catch (IoTDBConnectionException | StatementExecutionException e) {
-            System.err.println("Error: " + e.getMessage());
-        } finally {
-            try {
-                session.close();
-            } catch (IoTDBConnectionException e) {
-                System.err.println("Error closing session: " + e.getMessage());
+            }
+            if (tablet.getRowSize() != 0) {
+                session.insert(tablet);
+                tablet.reset();
             }
         }
     }
 
-    /**
-     * Bulk data insertion using tablets (high performance)
-     */
-    public static void bulkInsertWithTablet() {
-        SessionPool sessionPool = new SessionPool.Builder()
-            .host(HOST)
-            .port(PORT)
-            .user(USERNAME)
-            .password(PASSWORD)
-            .maxSize(5)
-            .build();
-
-        try {
-            // Create schema for tablet
-            List<IMeasurementSchema> schemaList = new ArrayList<>();
-            schemaList.add(new MeasurementSchema("temperature", TSDataType.FLOAT));
-            schemaList.add(new MeasurementSchema("humidity", TSDataType.FLOAT));
-            schemaList.add(new MeasurementSchema("pressure", TSDataType.FLOAT));
-
-            int batchSize = 1000;
-            Tablet tablet = new Tablet("root.example.bulk_device", schemaList, batchSize);
-
-            // Generate bulk data
-            long baseTime = System.currentTimeMillis();
-            Random random = new Random();
-
-            for (int i = 0; i < batchSize; i++) {
-                int rowIndex = tablet.getRowSize();
-                tablet.addTimestamp(rowIndex, baseTime + i * 1000);
-                tablet.addValue("temperature", rowIndex, 20.0f + random.nextFloat() * 10);
-                tablet.addValue("humidity", rowIndex, 40.0f + random.nextFloat() * 30);
-                tablet.addValue("pressure", rowIndex, 1000.0f + random.nextFloat() * 100);
+    public int readTable(String region, long from)
+            throws IoTDBConnectionException, StatementExecutionException {
+        int count = 0;
+        try (ITableSession session = tablePool.getSession();
+             SessionDataSet dataSet = session.executeQueryStatement(
+                 "SELECT time, device_id, temperature FROM factory.sensors "
+                     + "WHERE region = '" + region + "' AND time >= " + from)) {
+            SessionDataSet.DataIterator it = dataSet.iterator();
+            while (it.next()) {
+                long time = it.getLong("time");
+                String deviceId = it.getString("device_id");
+                count++;
             }
-
-            // Insert tablet (high performance)
-            sessionPool.insertTablet(tablet);
-            System.out.println("Bulk insert completed: " + batchSize + " records");
-
-            // ⭐ CRITICAL: Query with iterator for memory efficiency
-            try (SessionDataSet dataSet = sessionPool.executeQueryStatement(
-                    "SELECT temperature, humidity, pressure FROM root.example.bulk_device LIMIT 10")) {
-
-                DataIterator iterator = dataSet.iterator();
-                System.out.println("Sample bulk data (first 10 records):");
-                System.out.println("Temp\tHumid\tPress");
-                System.out.println("-".repeat(30));
-
-                while (iterator.next()) {
-                    float temperature = iterator.getFloat(2);
-                    float humidity = iterator.getFloat(3);
-                    float pressure = iterator.getFloat(4);
-
-                    System.out.printf("%.1f\t%.1f\t%.1f%n", temperature, humidity, pressure);
-                }
-            }
-
-        } catch (Exception e) {
-            System.err.println("Error: " + e.getMessage());
-        } finally {
-            sessionPool.close();
         }
+        return count;
     }
 
-    /**
-     * Connection manager with retry logic
-     */
-    public static class ConnectionManager {
-        private Session session;
-        private final String host;
-        private final int port;
-        private final String username;
-        private final String password;
-
-        public ConnectionManager(String host, int port, String username, String password) {
-            this.host = host;
-            this.port = port;
-            this.username = username;
-            this.password = password;
-        }
-
-        public void connect() throws IoTDBConnectionException {
-            session = new Session.Builder()
-                .host(host)
-                .port(port)
-                .username(username)
-                .password(password)
-                .build();
-
-            session.open(false);
-        }
-
-        public void connectWithRetry(int maxRetries, long delayMs) throws IoTDBConnectionException {
-            Exception lastException = null;
-
-            for (int i = 0; i < maxRetries; i++) {
-                try {
-                    connect();
-                    return;  // Success
-                } catch (IoTDBConnectionException e) {
-                    lastException = e;
-                    if (i < maxRetries - 1) {
-                        try {
-                            Thread.sleep(delayMs * (i + 1));  // Exponential backoff
-                        } catch (InterruptedException ie) {
-                            Thread.currentThread().interrupt();
-                            throw new IoTDBConnectionException("Connection interrupted", ie);
-                        }
-                    }
-                }
-            }
-
-            throw new IoTDBConnectionException("Failed to connect after " + maxRetries + " attempts", lastException);
-        }
-
-        public Session getSession() {
-            return session;
-        }
-
-        public void close() {
-            if (session != null) {
-                try {
-                    session.close();
-                } catch (IoTDBConnectionException e) {
-                    System.err.println("Error closing session: " + e.getMessage());
-                }
-            }
-        }
+    @Override
+    public void close() {
+        treePool.close();
+        tablePool.close();
     }
 
-    public static void main(String[] args) {
-        System.out.println("IoTDB Java Connection Examples");
-        System.out.println("==============================");
+    public static void main(String[] args) throws Exception {
+        try (JavaConnectionTemplate iotdb = fromEnvironment()) {
+            long now = System.currentTimeMillis();
 
-        try {
-            System.out.println("1. 🚀 RECOMMENDED: SessionPool Example:");
-            sessionPoolExample();
+            iotdb.writeTree("root.template.line1.device1", now, 100);
+            System.out.println("tree rows: " + iotdb.readTree("root.template.line1.device1", now, now + 100_000));
 
-            System.out.println("\n2. Table Model Example:");
-            tableModelExample();
-
-            System.out.println("\n3. Bulk Insert with Tablet:");
-            bulkInsertWithTablet();
-
-            System.out.println("\n4. Basic Session Example (Alternative):");
-            basicSessionExample();
-
-        } catch (Exception e) {
-            System.err.println("Example error: " + e.getMessage());
+            iotdb.createTableSchema();
+            iotdb.writeTable("north", "d1", now, 100);
+            System.out.println("table rows: " + iotdb.readTable("north", now));
         }
     }
 }

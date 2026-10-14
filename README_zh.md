@@ -23,10 +23,9 @@
 - 多语言支持(Java、Python、C++、REST API)
 - 双数据模型支持(树模型 & 表模型)
 - 连接方式:
-  - Java SessionPool(生产环境推荐)
+  - Java / Python SessionPool（树模型）与 TableSessionPool（表模型）
+  - C++ SessionPool（V2.0.11+）
   - JDBC 接口
-  - Python 客户端
-  - C++ 客户端
   - REST API
 - 生产部署最佳实践
 - 内存高效的数据读取模式
@@ -109,7 +108,7 @@ timecho-skills/
 ├── iotdb/              # IoTDB 连接和使用指南
 │   ├── SKILL.md        # 主技能文档
 │   ├── references/     # 特定语言指南
-│   │   ├── java_examples_priority.md
+│   │   ├── java_examples.md
 │   │   ├── python_examples.md
 │   │   ├── cpp_examples.md
 │   │   ├── rest_api.md
@@ -156,8 +155,10 @@ SessionPool sessionPool = new SessionPool.Builder()
     .maxSize(10)
     .build();
 
-try (SessionDataSet dataSet = sessionPool.executeQueryStatement("SELECT * FROM root.factory.**")) {
-    DataIterator iterator = dataSet.iterator();
+// SessionPool 返回 SessionDataSetWrapper，关闭它即把 session 归还给连接池
+try (SessionDataSetWrapper wrapper = sessionPool.executeQueryStatement(
+        "SELECT temperature FROM root.factory.line1.device7 LIMIT 10")) {
+    SessionDataSet.DataIterator iterator = wrapper.iterator();
     while (iterator.next()) {
         System.out.println("Time: " + iterator.getLong(1) + ", Value: " + iterator.getFloat(2));
     }
@@ -182,7 +183,7 @@ with TsFileReader("data.tsfile") as reader:
 
 ### IoTDB 技能
 
-- Java: IoTDB Java API (SessionPool/JDBC)
+- Java: `iotdb-session`（SessionPool / TableSessionPool）、`iotdb-jdbc`
 - Python: `apache-iotdb` 包
 - C++: IoTDB C++ 客户端库
 - REST: HTTP 客户端(任何语言)

@@ -23,10 +23,9 @@ This repository contains specialized skills designed to enhance AI assistant cap
 - Multi-language support (Java, Python, C++, REST API)
 - Dual data model support (Tree Model & Table Model)
 - Connection methods:
-  - Java SessionPool (production-recommended)
+  - Java / Python SessionPool (tree model) and TableSessionPool (table model)
+  - C++ SessionPool (V2.0.11+)
   - JDBC interface
-  - Python client
-  - C++ client
   - REST API
 - Best practices for production deployments
 - Memory-efficient data reading patterns
@@ -109,7 +108,7 @@ timecho-skills/
 ├── iotdb/              # IoTDB connection and usage guide
 │   ├── SKILL.md        # Main skill documentation
 │   ├── references/     # Language-specific guides
-│   │   ├── java_examples_priority.md
+│   │   ├── java_examples.md
 │   │   ├── python_examples.md
 │   │   ├── cpp_examples.md
 │   │   ├── rest_api.md
@@ -156,8 +155,10 @@ SessionPool sessionPool = new SessionPool.Builder()
     .maxSize(10)
     .build();
 
-try (SessionDataSet dataSet = sessionPool.executeQueryStatement("SELECT * FROM root.factory.**")) {
-    DataIterator iterator = dataSet.iterator();
+// SessionPool returns a SessionDataSetWrapper; closing it returns the session to the pool
+try (SessionDataSetWrapper wrapper = sessionPool.executeQueryStatement(
+        "SELECT temperature FROM root.factory.line1.device7 LIMIT 10")) {
+    SessionDataSet.DataIterator iterator = wrapper.iterator();
     while (iterator.next()) {
         System.out.println("Time: " + iterator.getLong(1) + ", Value: " + iterator.getFloat(2));
     }
@@ -182,7 +183,7 @@ with TsFileReader("data.tsfile") as reader:
 
 ### IoTDB Skill
 
-- Java: IoTDB Java API (SessionPool/JDBC)
+- Java: `iotdb-session` (SessionPool / TableSessionPool), `iotdb-jdbc`
 - Python: `apache-iotdb` package
 - C++: IoTDB C++ client library
 - REST: HTTP client (any language)
