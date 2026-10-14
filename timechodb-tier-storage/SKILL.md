@@ -10,8 +10,10 @@ metadata:
   description_zh: >-
     多级存储：热/温/冷分层、冷数据转对象存储、分层 TTL 与空间阈值配置
 compatibility: >
-  Tiered storage is a TimechoDB enterprise capability. Confirm tier syntax and threshold
-  semantics against the target version's documentation before applying.
+  The object-storage (cold) tier is a TimechoDB enterprise capability and is not available
+  in Apache IoTDB, where the code path throws OBJECT_STORAGE_NOT_SUPPORTED_YET. Local
+  tiering via dn_data_dirs and tier_ttl_in_ms exists in Apache IoTDB as well. Confirm tier
+  syntax and threshold semantics against the target version's documentation.
 ---
 
 # TimechoDB 多级存储 (Tiered Storage)
@@ -56,8 +58,10 @@ dn_default_space_usage_thresholds=<tier1>;<tier2>;<tier3>
 只读与写满要分情况看：
 
 - 包含远端存储的层（`OBJECT_STORAGE`）总空间按 `Long.MAX_VALUE` 计，使用率不可能达到阈值，
-  因此**示例里最后一个阈值实际不起作用**，不要把它当成「保护对象存储层」的开关来调；
-- 真正会触发只读的是本地盘告警阈值 `disk_space_warning_threshold`（默认 `0.05`）；
+  因此**示例里最后一个阈值对远端层不起作用**，不要把它当成「保护对象存储层」的开关来调；
+- 文档写明「最后一层级的使用率达到或超过阈值时，系统标记为 `READ_ONLY`」，这一条对本地末层成立；
+- 本地磁盘另有剩余空间阈值 `disk_space_warning_threshold`（默认 `0.05`，即磁盘剩余低于该比例时
+  DataNode 被置为 ReadOnly）；
 - 最后一层写满之后的处理由 `dn_tier_full_policy` 控制（取值以目标版本文档为准）。
 
 ```properties
