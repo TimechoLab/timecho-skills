@@ -33,7 +33,7 @@ pipe 显示 `RUNNING`、`RemainingEventCount=0`，但表模型数据一条也不
 - 先确认数据属于哪个模型，再在对应方言下创建 pipe（`SET SQL_DIALECT=TABLE`，或 CLI 加
   `-sql_dialect table`）；
 - 树表数据都有时，分别建两条 pipe；
-- 双活场景按官方文档使用 `mode.double-living`；
+- 双活场景按官方文档使用 `source.mode.double-living`（它会忽略 `sql_dialect`，树表数据都捕获）；
 - `SHOW PIPES` 只列出**当前方言**下创建的 pipe，在 tree 会话里看不到 table 方言建的 pipe。
 
 ## 全量 + 增量同步
@@ -79,17 +79,23 @@ WITH SINK ('sink'='iotdb-thrift-sink', 'node-urls'='<center_ip>:6667');
 ## 双活镜像
 
 双活最容易配错的两处：**转发**与**方言**。两端都按默认值转发时，数据会在 A 与 B 之间无限循环；
-两端方言不一致时，只会镜像其中一个模型，两端静默分叉。官方文档给出的双活做法是使用
-`mode.double-living`；若手工配置两端 pipe，务必注意上面两点。
+两端方言不一致时，只会镜像其中一个模型，两端静默分叉。
+
+当前版本文档的做法是两端都开启 `source.mode.double-living`（参数表中记作 `mode.double-living`）：
+开启后会**忽略连接所用的 `sql_dialect`，树表模型数据都会被捕获**，且不转发由另一条 pipe 同步而来的数据，
+正好同时解决上面两个问题：
 
 ```sql
 -- A 端
 CREATE PIPE ab
-WITH SOURCE ('inclusion'='all', 'forwarding-pipe-requests'='false')
-WITH SINK ('sink'='iotdb-thrift-sink', 'node-urls'='<B_ip>:6667');
+WITH SOURCE ('source.mode.double-living'='true')
+WITH SINK ('sink'='iotdb-thrift-sink', 'node-urls'='<B_ip>:6668');
 
--- B 端对称创建 ba（SINK 指向 A），同样带 forwarding-pipe-requests=false
+-- B 端对称创建 ba（SINK 指向 A），同样带 source.mode.double-living=true
 ```
+
+旧版本文档给出的等价手工写法是两端都配 `'inclusion'='all'` 且 `'forwarding-pipe-requests'='false'`。
+注意 `source.mode.double-living=true` 与 `forwarding-pipe-requests=true` 不能同时设置，校验会直接报错。
 
 两条额外要求：
 
