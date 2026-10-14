@@ -33,10 +33,12 @@ compatibility: >
 再 `grep ERROR` 会把它们全部滤掉。按模式用 `grep -A`，或直接 `tail`：
 
 ```bash
-# DataNode：按级别分好的日志（ConfigNode 换 log_confignode_*）
+# DataNode：按级别分好的日志（ERROR 与 WARN 各一个文件；ConfigNode 换 log_confignode_*）
 tail -n 200 logs/log_datanode_error.log
+tail -n 200 logs/log_datanode_warn.log
+
+# 按模式找时用 grep -A 把堆栈上下文一起带出来
 grep -A 30 "No space left" logs/log_datanode_error.log
-grep -A 30 "OutOfMemoryError" logs/log_datanode_error.log
 
 # 慢查询单独落一个文件：SLOW_SQL logger 配了 additivity=false，
 # 不会出现在 log_datanode_all.log 里；阈值 slow_query_threshold，默认 10000ms
