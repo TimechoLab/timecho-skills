@@ -100,7 +100,7 @@ auto result = reader.read_table(table_name);
 
 **Column Categories**
 
-- **TAG**: Device identifiers, locations, static metadata
+- **TAG**: Device identifier columns (e.g. region, device_id); together their values form the device ID (a joint primary key). Do not put descriptive metadata such as model or firmware here; in IoTDB that belongs in ATTRIBUTE columns
 - **FIELD**: Actual measurements (temperature, pressure, etc.)
 
 **Data Type Selection**
