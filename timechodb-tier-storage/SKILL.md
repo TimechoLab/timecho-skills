@@ -51,7 +51,19 @@ dn_default_space_usage_thresholds=<tier1>;<tier2>;<tier3>
 
 ⚠️ 空间阈值的语义（“每层最大使用率” 还是 “剩余空间阈值”）官方文档的参数表与示例表
 表述不一致，两种理解下数值的调整方向正好相反。**必须按目标版本的文档确认后再改**，
-不要凭经验填值。另外，最后一层达到阈值后系统会进入 `READ_ONLY`。
+不要凭经验填值。
+
+只读与写满要分情况看：
+
+- 包含远端存储的层（`OBJECT_STORAGE`）总空间按 `Long.MAX_VALUE` 计，使用率不可能达到阈值，
+  因此**示例里最后一个阈值实际不起作用**，不要把它当成「保护对象存储层」的开关来调；
+- 真正会触发只读的是本地盘告警阈值 `disk_space_warning_threshold`（默认 `0.05`）；
+- 最后一层写满之后的处理由 `dn_tier_full_policy` 控制（取值以目标版本文档为准）。
+
+```properties
+disk_space_warning_threshold=0.05
+dn_tier_full_policy=<按目标版本文档取值>
+```
 
 ## 与 TTL 的区别（重要）
 
