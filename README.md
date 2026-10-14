@@ -6,10 +6,11 @@ A comprehensive collection of AI assistant skills for working with Apache IoTDB 
 
 ## 📚 Overview
 
-This repository contains two specialized skills designed to enhance AI assistant capabilities when helping developers work with:
+This repository contains specialized skills designed to enhance AI assistant capabilities when helping developers work with:
 
 1. **IoTDB** - A low-cost, high-performance IoT-native time-series database
 2. **TsFile** - Open-source File Format for Industrial Time-Series Datasets
+3. **TimechoDB** - Operations skills for TimechoDB: benchmarking, log analysis, Pipe sync, tiered storage, and Tree/Table model selection
 
 ## 🎯 Skills Included
 
@@ -63,6 +64,16 @@ This repository contains two specialized skills designed to enhance AI assistant
 - Performance tuning for large datasets
 
 **Path**: `tsfile/`
+
+### TimechoDB Skills
+
+| Skill | Purpose | Path |
+| --- | --- | --- |
+| Benchmark | Size and run iot-benchmark load tests; report throughput, latency and failures | `timechodb-benchmark/` |
+| Log Analyzer | Locate OOM, WAL/disk, compaction, slow-query and thread/file-handle problems in DataNode/ConfigNode logs | `timechodb-log-analyze/` |
+| Pipe Sync | Station-to-center sync, cascading, dual-active, SSL, compression, air-gap transfer and backlog monitoring | `timechodb-pipe-sync/` |
+| Tiered Storage | Hot/warm/cold tiers, object-storage cold tier, tier TTL and space thresholds | `timechodb-tier-storage/` |
+| Tree/Table Guide | Choose between Tree and Table models; TAG/ATTRIBUTE/FIELD mapping and model-specific SQL | `timechodb-tree-table-guide/` |
 
 ## 🚀 Getting Started
 
@@ -120,6 +131,14 @@ timecho-skills/
 │   │   ├── tsfile_example.cpp
 │   │   └── pom.xml
 │   └── scripts/        # Build and example scripts
+│
+├── timechodb-benchmark/         # iot-benchmark load testing
+├── timechodb-log-analyze/       # Log analysis and root cause location
+├── timechodb-pipe-sync/         # Pipe data sync
+├── timechodb-tier-storage/      # Tiered storage
+├── timechodb-tree-table-guide/  # Tree/Table model selection
+│   ├── SKILL.md
+│   └── references/
 │
 └── LICENSE             # Apache License 2.0
 ```

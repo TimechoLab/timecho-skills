@@ -6,10 +6,11 @@
 
 ## 📚 概述
 
-本仓库包含两个专业技能，旨在增强 AI 助手在以下领域帮助开发人员的能力:
+本仓库包含多个专业技能，旨在增强 AI 助手在以下领域帮助开发人员的能力:
 
 1. **IoTDB** - 低成本、高性能的物联网原生时序数据库
 2. **TsFile** - 工业时序数据集的开源文件格式
+3. **TimechoDB** - TimechoDB 运维类技能：性能测试、日志分析、Pipe 同步、多级存储、树/表模型选型
 
 ## 🎯 包含的技能
 
@@ -63,6 +64,16 @@
 - 大数据集性能调优
 
 **路径**: `tsfile/`
+
+### TimechoDB 技能
+
+| 技能 | 用途 | 路径 |
+| --- | --- | --- |
+| 性能测试 | 按服务端资源确定 iot-benchmark 压测规模并执行，输出吞吐、延迟与失败数 | `timechodb-benchmark/` |
+| 日志分析 | 从 DataNode/ConfigNode 日志定位 OOM、WAL/磁盘、Compaction、慢查询、线程与句柄问题 | `timechodb-log-analyze/` |
+| Pipe 同步 | 场站→中心汇聚、级联、双活、SSL、压缩、网闸穿透与积压监控 | `timechodb-pipe-sync/` |
+| 多级存储 | 热/温/冷分层、对象存储冷层、分层 TTL 与空间阈值 | `timechodb-tier-storage/` |
+| 树/表模型选型 | 树模型与表模型的选择、TAG/ATTRIBUTE/FIELD 映射与模型专属 SQL | `timechodb-tree-table-guide/` |
 
 ## 🚀 快速开始
 
@@ -120,6 +131,14 @@ timecho-skills/
 │   │   ├── tsfile_example.cpp
 │   │   └── pom.xml
 │   └── scripts/        # 构建和示例脚本
+│
+├── timechodb-benchmark/         # iot-benchmark 性能测试
+├── timechodb-log-analyze/       # 日志分析与根因定位
+├── timechodb-pipe-sync/         # Pipe 数据同步
+├── timechodb-tier-storage/      # 多级存储
+├── timechodb-tree-table-guide/  # 树/表模型选型
+│   ├── SKILL.md
+│   └── references/
 │
 └── LICENSE             # Apache License 2.0
 ```

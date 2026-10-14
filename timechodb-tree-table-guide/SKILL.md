@@ -1,6 +1,13 @@
 ---
 name: timechodb-tree-table-guide
 description: Explain and select TimechoDB or Apache IoTDB Tree versus Table models. Use for hierarchical path design, TAG/ATTRIBUTE/FIELD mapping, device and measurement boundaries, model-specific SQL, schema migration planning, and deciding which model fits a workload.
+metadata:
+  version: "1.0.0"
+  description_zh: >-
+    树/表模型选型：层级路径设计、TAG/ATTRIBUTE/FIELD 映射、设备与测点边界、模型专属 SQL
+compatibility: >
+  The Table model and sql_dialect exist only in IoTDB/TimechoDB V2.0+; V1.3.x supports only
+  the Tree model. Confirm the connected version before choosing a model.
 ---
 
 # TimechoDB Tree and Table Models
@@ -11,14 +18,15 @@ Keep model choice explicit; do not translate syntax or metadata implicitly.
 
 - Choose **Tree** for hierarchical paths such as
   `root.<database>.<device>.<measurement>` and path-oriented operations.
-- Choose **Table** for relational tables with TAG, ATTRIBUTE, FIELD, and TIME
-  columns and SQL-oriented analysis.
+- Choose **Table** (V2.0+ only) for relational tables with TAG, ATTRIBUTE,
+  FIELD, and TIME columns and SQL-oriented analysis.
 - Choose coexistence only after defining which model owns writes, how data is
   exposed to the other model, and which connected versions support that bridge.
 
 ## Minimal workflow
 
-1. Confirm the connected version and current SQL dialect.
+1. Confirm the connected version (the Table model requires V2.0+) and current
+   SQL dialect.
 2. Describe the source hierarchy or table schema without translating it yet.
 3. Identify stable device identity, mutable attributes, measurements, and time
    semantics.
