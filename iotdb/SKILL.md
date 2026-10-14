@@ -1,7 +1,10 @@
 ---
 name: iotdb
-description: Comprehensive guide for connecting to Apache IoTDB using Java SessionPool/Session/JDBC, Python, C++, and REST APIs. PRIORITIZES SessionPool for production applications and iterator-based data reading for optimal memory efficiency. Provides detailed syntax guides for both tree model (timeseries) and table model (relational) data structures. Use when users need to establish IoTDB connections, implement data insertion/querying, configure database sessions, or work with IoTDB clients across different programming languages and data models.
-license: Complete terms in LICENSE.txt
+description: Connect to Apache IoTDB / TimechoDB from Java, Python, C++, JDBC and REST, using connection pools (SessionPool for the tree model, TableSessionPool for the table model) and iterator-based result reading. Covers tree model (timeseries paths) and table model (TAG/ATTRIBUTE/FIELD tables) read/write syntax. Use when users need to establish IoTDB connections, implement data insertion/querying, configure client sessions, or integrate IoTDB clients into applications.
+license: Complete terms in LICENSE
+compatibility: >
+  Examples target IoTDB/TimechoDB V2.0.x clients and servers; keep the client version equal to
+  the server version. The table model requires V2.0+. The C++ SessionPool requires V2.0.11+.
 ---
 
 # IoTDB Connection Guide
@@ -14,584 +17,352 @@ IoTDB itself is an Apache Software Foundation project licensed under Apache 2.0.
 
 ## Overview
 
-Provides comprehensive guidance for establishing connections to Apache IoTDB across multiple programming languages (Java, Python, C++, REST) and data models (Tree Model for timeseries, Table Model for relational-style data).
+Provides guidance for connecting to Apache IoTDB / TimechoDB from Java, Python, C++, JDBC and REST, for both data models:
+
+- **Tree model**: hierarchical timeseries paths such as `root.factory.line1.device7.temperature`.
+- **Table model** (V2.0+): tables whose columns are `TAG`, `ATTRIBUTE`, `FIELD` and a `TIME` column.
+
+For choosing between the models and planning a migration, use the `timechodb-tree-table-guide` skill.
 
 ## Connection Decision Tree
 
-Choose your connection method based on your requirements:
+**Application code always goes through a pool.** Create one pool per application (a singleton),
+share it across threads, and close it on shutdown. Do not create a pool per request, and do not use a
+bare `Session` / `TableSession` in application code.
 
-1. **Java Applications (RECOMMENDED)** → Use IoTDB SessionPool (Primary) or JDBC (Secondary)
-   - **SessionPool**: **BEST CHOICE** for production applications with connection pooling and thread safety
-   - **JDBC**: Standard SQL interface for existing applications and frameworks
-   - Native performance and full feature support
-   - Supports both tree and table models
-   - **Always use iterator-based reading** for memory efficiency
+| Client | Tree model | Table model |
+|--------|------------|-------------|
+| Java | `SessionPool` | `ITableSessionPool` (built by `TableSessionPoolBuilder`) |
+| Python | `SessionPool` (+ `PoolConfig`) | `TableSessionPool` (+ `TableSessionPoolConfig`) |
+| C++ | `SessionPool` (V2.0.11+) | `SessionPool` with `sqlDialect("table")` (V2.0.11+) |
+| JDBC | `jdbc:iotdb://<host>:6667/` | `jdbc:iotdb://<host>:6667/<database>?sql_dialect=table` |
+| REST | `/rest/v2/*` | `/rest/table/v1/*` |
 
-2. **Python Applications** → Use IoTDB Python Client
-   - Full-featured Python API with pandas support
-   - Great for data science and analytics workflows
-   - Supports both tree and table models
-   - **Iterator support available** for large datasets
+- C++ before V2.0.11 has no pool: create one `Session` / `TableSession` per worker thread, open it once and
+  reuse it.
+- JDBC is for frameworks that require it (MyBatis, Spring `JdbcTemplate`); native pools are faster for bulk writes.
+- REST is disabled by default (`enable_rest_service=true` in `iotdb-system.properties`, port `18080`).
 
-3. **C++ Applications** → Use IoTDB C++ Client
-   - High-performance native C++ integration
-   - Ideal for embedded systems or high-performance applications
-   - Currently supports tree model
+### Connection defaults
 
-4. **Language-agnostic/HTTP** → Use REST API
-   - Cross-platform HTTP-based access
-   - Simple integration for any language with HTTP support
-   - Supports basic query and insert operations
+- RPC port: `6667`.
+- User: `root`. Default password: `root` for Apache IoTDB; `TimechoDB@2021` for TimechoDB V2.0.6.1+.
+  Never hard-code credentials in production code.
 
 ## Data Model Selection
 
-**Tree Model (Timeseries) - Traditional IoTDB**
+- **Tree model**: path-oriented access, devices addressed by path, wildcard queries (`*`, `**`).
+- **Table model**: one table per device type; `TAG` columns identify a device, `ATTRIBUTE` columns hold
+  device-level metadata, `FIELD` columns hold measurements; SQL-style filtering, `GROUP BY`, joins.
 
-- Hierarchical path-based data organization (e.g., `root.factory.workshop.temperature`)
-- Optimized for IoT timeseries data with high ingestion rates
-- Path structure: `root.{database}.{device}.{sensor}`
-- **Best for**: Real-time monitoring, IoT sensors, time-series analytics
-- **Syntax**: See [Data Models Guide](references/data_models.md) for complete syntax reference
+See [Data Models Guide](references/data_models.md) for syntax of both models.
 
-**Table Model (Relational) - SQL-Like**
+## Java
 
-- SQL-like table structure with tags, attributes, and fields
-- More familiar for users coming from relational databases
-- Better for complex queries, joins, and business analytics
-- Structure: Tables with columns categorized as TAG, ATTRIBUTE, or FIELD
-- **Best for**: Business intelligence, complex analytics, multi-dimensional queries
-- **Syntax**: See [Data Models Guide](references/data_models.md) for complete syntax reference
+```xml
+<dependency>
+    <groupId>org.apache.iotdb</groupId>
+    <artifactId>iotdb-session</artifactId>
+    <!-- keep equal to the server version -->
+    <version>${iotdb.version}</version>
+</dependency>
+```
 
-## Java Connection (SessionPool & JDBC)
-
-### 🚀 RECOMMENDED: SessionPool Connection
-
-**SessionPool is the PREFERRED method** for ALL production Java applications. It provides connection pooling, thread safety, and optimal resource management.
+### Tree model: SessionPool
 
 ```java
-// PRIMARY RECOMMENDATION: SessionPool for production
+import org.apache.iotdb.isession.SessionDataSet;
+import org.apache.iotdb.isession.pool.SessionDataSetWrapper;
+import org.apache.iotdb.session.pool.SessionPool;
+
+import org.apache.tsfile.enums.TSDataType;
+import org.apache.tsfile.write.record.Tablet;
+import org.apache.tsfile.write.schema.IMeasurementSchema;
+import org.apache.tsfile.write.schema.MeasurementSchema;
+
+// One pool per application; share it across threads and close it on shutdown.
 SessionPool sessionPool = new SessionPool.Builder()
-    .host("127.0.0.1")
-    .port(6667)
+    .nodeUrls(Collections.singletonList("127.0.0.1:6667"))
     .user("root")
     .password("root")
-    .maxSize(10)  // Connection pool size
+    .maxSize(10)
     .build();
 
-// Always use try-with-resources for proper cleanup
-try (SessionDataSet dataSet = sessionPool.executeQueryStatement("SELECT * FROM root.factory.**")) {
-    // ALWAYS use iterator for memory efficiency
-    DataIterator iterator = dataSet.iterator();
-    while (iterator.next()) {
-        // Process data efficiently
-        System.out.println("Time: " + iterator.getLong(1) + ", Value: " + iterator.getFloat(2));
+// Write: batch rows of one device into a Tablet.
+// Timeseries are created automatically on first write (enable_auto_create_schema=true by default).
+List<IMeasurementSchema> schemas = Arrays.asList(
+    new MeasurementSchema("temperature", TSDataType.FLOAT),
+    new MeasurementSchema("humidity", TSDataType.FLOAT));
+Tablet tablet = new Tablet("root.factory.line1.device7", schemas, 1000);
+long start = System.currentTimeMillis();
+for (int i = 0; i < 5000; i++) {
+    int row = tablet.getRowSize();
+    tablet.addTimestamp(row, start + i * 1000L);
+    tablet.addValue("temperature", row, 20.0f + i % 10);
+    tablet.addValue("humidity", row, 60.0f);
+    if (tablet.getRowSize() == tablet.getMaxRowNumber()) {
+        sessionPool.insertTablet(tablet);
+        tablet.reset();
     }
 }
+if (tablet.getRowSize() != 0) {
+    sessionPool.insertTablet(tablet);
+    tablet.reset();
+}
+
+// Read: SessionPool returns a SessionDataSetWrapper; closing it returns the session to the pool.
+try (SessionDataSetWrapper wrapper = sessionPool.executeQueryStatement(
+        "SELECT temperature FROM root.factory.line1.device7 WHERE time >= now() - 1h")) {
+    SessionDataSet.DataIterator it = wrapper.iterator();
+    while (it.next()) {
+        long time = it.getLong("Time");
+        float temperature = it.getFloat("root.factory.line1.device7.temperature");
+    }
+}
+
+// On application shutdown
+sessionPool.close();
 ```
 
-### Alternative: Basic Session Connection
+### Table model: TableSessionPool
 
-**⚠️ Use SessionPool instead** - Single Session is only for simple testing or single-threaded applications.
+Create the database and table once (CLI, migration script, or a session borrowed from the pool):
+
+```sql
+CREATE DATABASE IF NOT EXISTS factory;
+USE factory;
+CREATE TABLE IF NOT EXISTS sensors (
+  region STRING TAG,
+  plant_id STRING TAG,
+  device_id STRING TAG,
+  model STRING ATTRIBUTE,
+  temperature FLOAT FIELD,
+  humidity DOUBLE FIELD
+) WITH (TTL=31536000000);
+```
 
 ```java
-// ALTERNATIVE: Single session (SessionPool is preferred)
-Session session = new Session.Builder()
-    .host("127.0.0.1")
-    .port(6667)
-    .username("root")
+import org.apache.iotdb.isession.ITableSession;
+import org.apache.iotdb.isession.SessionDataSet;
+import org.apache.iotdb.isession.pool.ITableSessionPool;
+import org.apache.iotdb.session.pool.TableSessionPoolBuilder;
+
+import org.apache.tsfile.enums.ColumnCategory;   // V2.0.2: org.apache.tsfile.write.record.Tablet.ColumnCategory
+import org.apache.tsfile.enums.TSDataType;
+import org.apache.tsfile.write.record.Tablet;
+
+ITableSessionPool tablePool = new TableSessionPoolBuilder()
+    .nodeUrls(Collections.singletonList("127.0.0.1:6667"))
+    .user("root")
     .password("root")
+    .database("factory")   // default database of every borrowed session
+    .maxSize(10)
     .build();
-session.open(false);
 
-// Remember to close when done
-session.close();
-```
+// Borrow a session per unit of work; close() returns it to the pool.
+try (ITableSession session = tablePool.getSession()) {
+    List<String> columns = Arrays.asList("region", "plant_id", "device_id", "model", "temperature", "humidity");
+    List<TSDataType> types = Arrays.asList(TSDataType.STRING, TSDataType.STRING, TSDataType.STRING,
+        TSDataType.STRING, TSDataType.FLOAT, TSDataType.DOUBLE);
+    List<ColumnCategory> categories = Arrays.asList(ColumnCategory.TAG, ColumnCategory.TAG,
+        ColumnCategory.TAG, ColumnCategory.ATTRIBUTE, ColumnCategory.FIELD, ColumnCategory.FIELD);
 
-### 🔧 JDBC Connection (Alternative for Framework Integration)
+    Tablet tablet = new Tablet("sensors", columns, types, categories, 1000);
+    int row = tablet.getRowSize();
+    tablet.addTimestamp(row, System.currentTimeMillis());
+    tablet.addValue("region", row, "north");
+    tablet.addValue("plant_id", row, "p1");
+    tablet.addValue("device_id", row, "d7");
+    tablet.addValue("model", row, "A");
+    tablet.addValue("temperature", row, 25.5f);
+    tablet.addValue("humidity", row, 60.0);
+    session.insert(tablet);
 
-JDBC is the **secondary choice** for Java applications, use when integrating with existing JDBC-based frameworks:
-
-```java
-// JDBC Connection - for framework integration
-String url = "jdbc:iotdb://127.0.0.1:6667/";
-String username = "root";
-String password = "root";
-
-try (Connection connection = DriverManager.getConnection(url, username, password)) {
-    // Use JDBC operations here
-} // Auto-close connection
-```
-
-**📋 JDBC Examples:** See [JDBC Reference](references/jdbc_examples.md) for comprehensive JDBC integration patterns, Spring Boot examples, and connection pooling configurations.
-
-**🌟 Framework Integration:**
-
-- **Spring Boot**: See [Spring Boot Integration](references/spring_boot_integration.md) for official Spring Boot starter, auto-configuration, and SessionPool management
-- **MyBatis**: See [MyBatis Integration](references/mybatis_integration.md) for SQL mapping, generator configuration, and JDBC-based applications
-
-### Tree Model Operations (SessionPool)
-
-```java
-// Create database and timeseries using SessionPool
-sessionPool.createDatabase("root.factory");
-sessionPool.createTimeseries(
-    "root.factory.workshop.temperature",
-    TSDataType.FLOAT,
-    TSEncoding.RLE,
-    CompressionType.SNAPPY
-);
-
-// Insert single record
-sessionPool.insertRecord(
-    "root.factory.workshop",
-    System.currentTimeMillis(),
-    Arrays.asList("temperature", "humidity"),
-    Arrays.asList(TSDataType.FLOAT, TSDataType.FLOAT),
-    Arrays.asList(25.5f, 60.0f)
-);
-
-// ⭐ CRITICAL: Always use iterator for reading data (memory efficient)
-try (SessionDataSet dataSet = sessionPool.executeQueryStatement(
-        "SELECT temperature FROM root.factory.workshop")) {
-
-    // Iterator pattern - RECOMMENDED for all data reading
-    DataIterator iterator = dataSet.iterator();
-    while (iterator.next()) {
-        System.out.println("Time: " + iterator.getLong(1) +
-                         ", Temperature: " + iterator.getFloat(2));
-    }
-} // Auto-close dataset
-
-// Bulk insertion using Tablet (RECOMMENDED for high throughput)
-List<String> measurements = Arrays.asList("temperature", "humidity");
-List<TSDataType> dataTypes = Arrays.asList(TSDataType.FLOAT, TSDataType.FLOAT);
-List<TSEncoding> encodings = Arrays.asList(TSEncoding.RLE, TSEncoding.RLE);
-List<CompressionType> compressors = Arrays.asList(CompressionType.SNAPPY, CompressionType.SNAPPY);
-
-Tablet tablet = new Tablet("root.factory.workshop", measurements, dataTypes, 1000);
-// Add data to tablet rows...
-sessionPool.insertTablet(tablet);
-```
-
-### JDBC Operations (Alternative Approach)
-
-```java
-try (Connection connection = DriverManager.getConnection(
-        "jdbc:iotdb://127.0.0.1:6667/", "root", "root")) {
-
-    // Create database and timeseries
-    try (Statement stmt = connection.createStatement()) {
-        stmt.execute("CREATE DATABASE root.factory");
-        stmt.execute("CREATE TIMESERIES root.factory.workshop.temperature " +
-                    "WITH DATATYPE=FLOAT, ENCODING=RLE");
-
-        // Insert data
-        stmt.execute("INSERT INTO root.factory.workshop(timestamp, temperature) " +
-                    "VALUES(" + System.currentTimeMillis() + ", 25.5)");
-    }
-
-    // ⭐ CRITICAL: Always use iterator pattern with ResultSet
-    try (Statement stmt = connection.createStatement();
-         ResultSet rs = stmt.executeQuery("SELECT * FROM root.factory.workshop")) {
-
-        // Iterator-based ResultSet processing for memory efficiency
-        while (rs.next()) {
-            System.out.println("Time: " + rs.getLong("Time") +
-                             ", Temperature: " + rs.getFloat("root.factory.workshop.temperature"));
+    try (SessionDataSet dataSet = session.executeQueryStatement(
+            "SELECT time, device_id, temperature FROM sensors "
+                + "WHERE region = 'north' AND time >= now() - 1h")) {
+        SessionDataSet.DataIterator it = dataSet.iterator();
+        while (it.next()) {
+            long time = it.getLong("time");
+            String deviceId = it.getString("device_id");
+            float temperature = it.getFloat("temperature");
         }
     }
 }
+
+// On application shutdown
+tablePool.close();
 ```
 
-**📚 Complete JDBC Guide:** See [JDBC Examples](references/jdbc_examples.md) for:
+A `USE <db>` executed in a borrowed session only lasts until the session is returned; the next borrower
+starts from the pool's `database(...)` again.
 
-- Connection pooling with HikariCP
-- Spring Boot integration
-- Batch operations and performance optimization
-- Error handling patterns
-- PreparedStatement examples
+More: [Java Examples](references/java_examples.md) (concurrency, aligned timeseries, error handling, retries).
 
-### Table Model Operations (SessionPool)
+### JDBC and frameworks
 
 ```java
-// Table Model Connection - Use ITableSession for table operations
-ITableSession tableSession = new TableSessionBuilder()
-    .nodeUrls(Collections.singletonList("127.0.0.1:6667"))
-    .username("root")
-    .password("root")
-    .database("factory")  // Optional: set default database
-    .build();
-
-// Create database and table with proper schema design
-tableSession.executeNonQueryStatement("CREATE DATABASE factory");
-tableSession.executeNonQueryStatement("USE factory");
-
-tableSession.executeNonQueryStatement(
-    "CREATE TABLE sensors(" +
-    "region_id STRING TAG, " +           // TAG: Low cardinality, indexed
-    "workshop_id STRING TAG, " +         // TAG: Used for filtering
-    "device_type STRING ATTRIBUTE, " +   // ATTRIBUTE: Metadata
-    "temperature FLOAT FIELD, " +        // FIELD: Actual measurements
-    "humidity DOUBLE FIELD" +            // FIELD: Actual measurements
-    ") WITH (TTL=3600000)"               // TTL: Data retention policy
-);
-
-// Insert using tablet (RECOMMENDED for bulk data)
-List<String> columnNames = Arrays.asList("region_id", "workshop_id", "device_type", "temperature", "humidity");
-List<TSDataType> dataTypes = Arrays.asList(TSDataType.STRING, TSDataType.STRING, TSDataType.STRING, TSDataType.FLOAT, TSDataType.DOUBLE);
-List<ColumnCategory> columnTypes = Arrays.asList(ColumnCategory.TAG, ColumnCategory.TAG, ColumnCategory.ATTRIBUTE, ColumnCategory.FIELD, ColumnCategory.FIELD);
-
-Tablet tablet = new Tablet("sensors", columnNames, dataTypes, columnTypes, 100);
-// Add data to tablet rows...
-tableSession.insert(tablet);
-
-// ⭐ CRITICAL: Always use iterator for querying (memory efficient)
-try (SessionDataSet dataSet = tableSession.executeQueryStatement(
-        "SELECT * FROM sensors WHERE region_id = 'region_1'")) {
-
-    DataIterator iterator = dataSet.iterator();
-    while (iterator.next()) {
-        System.out.println("Region: " + iterator.getString("region_id") +
-                         ", Temperature: " + iterator.getFloat("temperature"));
-    }
-} // Auto-close dataset
+// Tree model
+Connection tree = DriverManager.getConnection("jdbc:iotdb://127.0.0.1:6667/", "root", "root");
+// Table model
+Connection table = DriverManager.getConnection(
+    "jdbc:iotdb://127.0.0.1:6667/factory?sql_dialect=table", "root", "root");
 ```
 
-**📋 Table Model Syntax:** See [Data Models Guide](references/data_models.md) for complete SQL syntax, column types, and query patterns.
+IoTDB has no transactions: `commit()` / `rollback()` are no-ops. See [JDBC Examples](references/jdbc_examples.md),
+[Spring Boot Integration](references/spring_boot_integration.md) (official `iotdb-spring-boot-starter`, which
+exposes `ISessionPool` and `ITableSessionPool` beans) and [MyBatis Integration](references/mybatis_integration.md).
 
-## Python Connection
-
-### Installation and Basic Setup
+## Python
 
 ```bash
-pip install apache-iotdb
+pip install apache-iotdb==<server version>
 ```
 
-```python
-from iotdb.Session import Session
-
-# Tree Model Connection
-session = Session("127.0.0.1", "6667", "root", "root")
-session.open(False)
-
-# Set timezone (optional)
-session.set_time_zone("Asia/Shanghai")
-```
-
-### Tree Model Operations (Python with Iterator)
+### Tree model: SessionPool
 
 ```python
-# Create database and timeseries
-session.set_storage_group("root.factory")
-session.create_time_series(
-    "root.factory.workshop.temperature",
-    TSDataType.FLOAT,
-    TSEncoding.RLE,
-    Compressor.SNAPPY
+from iotdb.SessionPool import PoolConfig, SessionPool
+from iotdb.utils.IoTDBConstants import TSDataType
+from iotdb.utils.Tablet import Tablet
+
+pool_config = PoolConfig(
+    host="127.0.0.1", port="6667", user_name="root", password="root",
+    fetch_size=1024, time_zone="Asia/Shanghai", max_retry=3,
 )
+session_pool = SessionPool(pool_config, max_pool_size=10, wait_timeout_in_ms=3000)
 
-# Insert single record
-session.insert_record(
-    "root.factory.workshop",
-    1635232143960,
-    ["temperature", "humidity"],
-    [TSDataType.FLOAT, TSDataType.FLOAT],
-    [25.5, 60.0]
-)
+session = session_pool.get_session()
+try:
+    # values: one list per row, in the order of the measurements
+    tablet = Tablet(
+        "root.factory.line1.device7",
+        ["temperature", "humidity"],
+        [TSDataType.FLOAT, TSDataType.FLOAT],
+        [[25.5, 60.0], [26.0, 61.5], [24.8, 58.2]],
+        [1700000000000, 1700000001000, 1700000002000],
+    )
+    session.insert_tablet(tablet)
 
-# ⭐ CRITICAL: Always use iterator for data reading (memory efficient)
-result = session.execute_query_statement("SELECT * FROM root.factory.workshop")
+    with session.execute_query_statement(
+        "SELECT temperature FROM root.factory.line1.device7"
+    ) as data_set:
+        while data_set.has_next():
+            print(data_set.next())
+finally:
+    session_pool.put_back(session)
 
-# Iterator pattern - RECOMMENDED for all data reading
-while result.has_next():
-    record = result.next()
-    print(f"Time: {record.get_timestamp()}, Values: {record.get_fields()}")
-
-# Close result to free memory
-result.close()
-
-# Bulk insertion using tablet (RECOMMENDED for high throughput)
-measurements = ["temperature", "humidity"]
-data_types = [TSDataType.FLOAT, TSDataType.FLOAT]
-values = [
-    [25.5, 26.0, 24.8],  # Temperature values
-    [60.0, 61.5, 58.2]   # Humidity values
-]
-timestamps = [1635232143960, 1635232153960, 1635232163960]
-
-tablet = Tablet("root.factory.workshop", measurements, data_types, values, timestamps)
-session.insert_tablet(tablet)
+session_pool.close()  # on application shutdown
 ```
 
-### Pandas Integration with Iterator
+### Table model: TableSessionPool
 
 ```python
-import pandas as pd
+from iotdb.table_session_pool import TableSessionPool, TableSessionPoolConfig
+from iotdb.utils.IoTDBConstants import TSDataType
+from iotdb.utils.Tablet import ColumnType, Tablet
 
-# Query and convert to pandas DataFrame (iterator-based)
-result = session.execute_query_statement("SELECT * FROM root.factory.workshop")
+config = TableSessionPoolConfig(
+    node_urls=["127.0.0.1:6667"], username="root", password="root",
+    database="factory", max_pool_size=10, wait_timeout_in_ms=3000,
+)
+table_pool = TableSessionPool(config)
 
-# Option 1: Direct conversion (handles iterator internally - RECOMMENDED for small datasets)
-df = result.todf()
-print(df)
+session = table_pool.get_session()
+try:
+    tablet = Tablet(
+        "sensors",
+        ["region", "plant_id", "device_id", "model", "temperature", "humidity"],
+        [TSDataType.STRING] * 4 + [TSDataType.FLOAT, TSDataType.DOUBLE],
+        [["north", "p1", "d7", "A", 25.5, 60.0]],
+        [1700000000000],
+        [ColumnType.TAG] * 3 + [ColumnType.ATTRIBUTE] + [ColumnType.FIELD] * 2,
+    )
+    session.insert(tablet)
 
-# Option 2: Manual iteration for large datasets (RECOMMENDED for memory control)
-data_rows = []
-while result.has_next():
-    record = result.next()
-    data_rows.append([record.get_timestamp()] + [field.get_value() for field in record.get_fields()])
+    with session.execute_query_statement(
+        "SELECT * FROM sensors WHERE device_id = 'd7'"
+    ) as data_set:
+        while data_set.has_next():
+            print(data_set.next())
+finally:
+    session.close()  # returns the session to the pool
 
-# Convert to DataFrame manually for better memory control
-df = pd.DataFrame(data_rows, columns=['Time'] + result.get_column_names()[1:])
-print(df.head())
-
-# Option 3: Streaming processing for very large datasets
-def process_large_dataset(query_sql):
-    result = session.execute_query_statement(query_sql)
-
-    # Process in chunks to avoid memory issues
-    chunk_size = 1000
-    chunk_data = []
-
-    while result.has_next():
-        record = result.next()
-        chunk_data.append([record.get_timestamp()] + [field.get_value() for field in record.get_fields()])
-
-        if len(chunk_data) >= chunk_size:
-            # Process chunk (e.g., save to file, analyze, etc.)
-            chunk_df = pd.DataFrame(chunk_data, columns=['Time'] + result.get_column_names()[1:])
-            # Do something with chunk_df
-            chunk_data = []  # Reset for next chunk
-
-    # Process remaining data
-    if chunk_data:
-        chunk_df = pd.DataFrame(chunk_data, columns=['Time'] + result.get_column_names()[1:])
-        # Process final chunk
-
-    result.close()  # Important: close result
-
-# Example usage
-process_large_dataset("SELECT * FROM root.factory.**")
+table_pool.close()  # on application shutdown
 ```
 
-### Table Model (Python)
+More: [Python Examples](references/python_examples.md) (threads, pandas, `next_df()` batches).
 
-Note: Table model support in Python client may require newer versions. Check the current documentation for availability.
+## C++
 
-## C++ Connection
+V2.0.11+ ships a `SessionPool`; earlier versions only have `Session` / `TableSession`.
+See [C++ Examples](references/cpp_examples.md) for both.
 
-### Prerequisites and Build
+## REST
 
 ```bash
-# Install dependencies (Ubuntu/Debian)
-sudo apt-get install libthrift-dev libboost-dev
+# Tree model (REST v2)
+curl -H "Content-Type: application/json" -H "Authorization: Basic cm9vdDpyb290" \
+     -X POST --data '{"sql": "SELECT temperature FROM root.factory.line1.device7 LIMIT 10"}' \
+     http://127.0.0.1:18080/rest/v2/query
 
-# Compile IoTDB C++ client
-mvn clean package -P with-cpp -pl iotdb-client/client-cpp -am -DskipTests
+# Table model
+curl -H "Content-Type: application/json" -H "Authorization: Basic cm9vdDpyb290" \
+     -X POST --data '{"database": "factory", "sql": "SELECT * FROM sensors LIMIT 10"}' \
+     http://127.0.0.1:18080/rest/table/v1/query
 ```
 
-### Basic Usage
+`cm9vdDpyb290` is `base64("root:root")`. See [REST API Reference](references/rest_api.md).
 
-```cpp
-#include "include/Session.h"
-#include <memory>
-#include <iostream>
+## SSL/TLS
 
-int main() {
-    // Create session
-    std::shared_ptr<Session> session(
-        new Session("127.0.0.1", 6667, "root", "root")
-    );
-    session->open(false);
-
-    // Create database
-    session->setStorageGroup("root.factory");
-
-    // Create timeseries
-    if (!session->checkTimeseriesExists("root.factory.workshop.temperature")) {
-        session->createTimeseries(
-            "root.factory.workshop.temperature",
-            TSDataType::FLOAT,
-            TSEncoding::RLE,
-            CompressionType::SNAPPY
-        );
-    }
-
-    // Insert data
-    std::vector<std::string> measurements = {"temperature", "humidity"};
-    std::vector<TSDataType::TSDataType> dataTypes = {TSDataType::FLOAT, TSDataType::FLOAT};
-    std::vector<char*> values = {"25.5", "60.0"};
-
-    session->insertRecord(
-        "root.factory.workshop",
-        1635232143960,
-        measurements,
-        dataTypes,
-        values
-    );
-
-    session->close();
-    return 0;
-}
-```
-
-### Compilation
-
-```bash
-clang++ -O2 your-code.cpp -liotdb_session \
-    -L/path/to/iotdb-client/lib \
-    -Wl,-rpath /path/to/iotdb-client/lib \
-    -std=c++11
-```
-
-## REST API Connection
-
-### Basic Authentication
-
-All REST endpoints (except `/ping`) require Basic Authentication:
-
-```bash
-# Generate base64 encoding for username:password
-echo -n "root:root" | base64
-# Output: cm9vdDpyb290
-```
-
-### REST Endpoints
-
-**Health Check**
-
-```bash
-curl http://127.0.0.1:18080/ping
-```
-
-**Execute Query**
-
-```bash
-curl -H "Content-Type: application/json" \
-     -H "Authorization: Basic cm9vdDpyb290" \
-     -X POST \
-     --data '{"sql": "SELECT * FROM root.factory.workshop"}' \
-     http://127.0.0.1:18080/rest/v1/query
-```
-
-**Execute Non-Query (DDL/DML)**
-
-```bash
-curl -H "Content-Type: application/json" \
-     -H "Authorization: Basic cm9vdDpyb290" \
-     -X POST \
-     --data '{"sql": "CREATE DATABASE root.factory"}' \
-     http://127.0.0.1:18080/rest/v1/nonQuery
-```
-
-**Insert Tablet Data**
-
-```bash
-curl -H "Content-Type: application/json" \
-     -H "Authorization: Basic cm9vdDpyb290" \
-     -X POST \
-     --data '{
-       "timestamps": [1635232143960, 1635232153960],
-       "measurements": ["temperature", "humidity"],
-       "dataTypes": ["FLOAT", "FLOAT"],
-       "values": [[25.5, 26.0], [60.0, 61.5]],
-       "isAligned": false,
-       "deviceId": "root.factory.workshop"
-     }' \
-     http://127.0.0.1:18080/rest/v1/insertTablet
-```
-
-## Connection Configuration
-
-### Common Connection Parameters
-
-- **Host**: IoTDB server address (default: 127.0.0.1)
-- **Port**: IoTDB RPC port (default: 6667)
-- **REST Port**: REST API port (default: 18080)
-- **Username**: Authentication username (default: root)
-- **Password**: Authentication password (default: root)
-- **Fetch Size**: Number of records to fetch per batch (default: 10000)
-- **Timeout**: Connection and query timeout settings
-
-### Session Pool (Java)
-
-For high-concurrency applications:
-
-```java
-SessionPool sessionPool = new SessionPool.Builder()
-    .host("127.0.0.1")
-    .port(6667)
-    .user("root")
-    .password("root")
-    .maxSize(10)  // Maximum concurrent sessions
-    .build();
-```
-
-### SSL/TLS Configuration
-
-For secure connections, configure SSL settings:
-
-```java
-// Java SSL configuration
-session.setEnableSSL(true);
-session.setKeyStore("/path/to/keystore");
-session.setKeyStorePassword("password");
-```
+- Java: `new SessionPool.Builder()...useSSL(true).trustStore("/path/to/truststore").trustStorePwd("<pwd>")`;
+  `TableSessionPoolBuilder` has the same three methods.
+- Python: `PoolConfig(..., use_ssl=True, ca_certs="/path/to/ca.pem")`; `TableSessionPoolConfig` takes the same.
+- JDBC: URL parameters `use_ssl=true&trust_store=<path>&trust_store_pwd=<pwd>`.
+- The server must have `enable_thrift_ssl=true`. That switches the whole RPC port to SSL, so every client
+  connecting to that node must use SSL.
 
 ## Best Practices
 
-1. **Connection Management (CRITICAL)**
-   - **🚀 Always prefer SessionPool** over individual sessions for production applications
-   - Always close sessions/connections after use (use try-with-resources in Java)
-   - Configure appropriate pool sizes based on application concurrency needs
-   - Use connection pooling for JDBC applications (HikariCP recommended)
-
-2. **Data Reading (MEMORY EFFICIENCY)**
-   - **⭐ ALWAYS use iterators** for reading query results - never load entire datasets into memory
-   - Use `DataIterator.next()` pattern for SessionPool operations
-   - Use `ResultSet.next()` pattern for JDBC operations
-   - Use `result.has_next()` pattern for Python operations
-   - Process data in chunks for very large datasets
-
-3. **Data Insertion (PERFORMANCE)**
-   - **Use tablets for bulk data insertion** - significantly better performance than individual records
-   - Batch multiple records together for better throughput
-   - Consider aligned timeseries for related measurements in tree model
-   - Use prepared statements for JDBC batch operations
-
-4. **Query Optimization**
-   - Use time range filters to limit data scope (`WHERE time >= ? AND time <= ?`)
-   - Create appropriate indexes for frequently queried paths/tags
-   - Consider using aggregation functions for large datasets
-   - Filter by TAG columns first in table model queries
-
-5. **Model Selection**
-   - Choose **Tree Model** for traditional IoT timeseries data, high ingestion rates
-   - Choose **Table Model** for complex analytical queries, business intelligence
-   - Consider data access patterns and query complexity when selecting model
-   - Use TAG columns wisely in table model (low cardinality, frequently filtered)
+1. **Connections**
+   - One pool per application, shared by all threads; size `maxSize` to the number of concurrent workers.
+   - Always return borrowed sessions (`try`-with-resources in Java, `put_back()` / `close()` in Python)
+     and close every result set; an unclosed result set keeps its session out of the pool.
+   - Configure `waitToGetSessionTimeoutInMs` (Java) / `wait_timeout_in_ms` (Python) so that pool exhaustion
+     fails fast instead of hanging.
+2. **Reading**
+   - Iterate results row by row (`DataIterator`, `has_next()`/`next()`), or in DataFrame batches with
+     `has_next_df()`/`next_df()` (Python V2.0.8+). Use `todf()` only for small results.
+   - Always bound queries by time (`WHERE time >= ... AND time < ...`) and, in the table model, by TAG values.
+3. **Writing**
+   - Use `Tablet` batches (hundreds to thousands of rows) instead of row-by-row inserts.
+   - Tree model: use aligned timeseries for measurements that are always written together.
+4. **Schema**
+   - Neither model has user-creatable secondary indexes; do not suggest "adding an index".
+     Tree queries are located by path; table queries by TAG values and time.
+   - Table model: TAG columns identify the device (they can be high-cardinality, e.g. `device_id`);
+     ATTRIBUTE columns hold device metadata; never store measurements in TAG columns.
 
 ## Resources
 
 ### References
 
-- **[Java Examples (SessionPool Priority)](references/java_examples_priority.md) - UPDATED: SessionPool-first approach with iterator patterns**
-- [Java Examples (Original)](references/java_examples.md) - SessionPool, Session, and iterator examples
-- [Python Examples](references/python_examples.md) - Python with iterator patterns and pandas integration
-- [C++ Examples](references/cpp_examples.md) - C++ implementation examples
-- [JDBC Reference](references/jdbc_examples.md) - Complete JDBC integration guide with Spring Boot, connection pooling, and performance optimization
-- **[Spring Boot Integration](references/spring_boot_integration.md) - Official Spring Boot starter examples with SessionPool and auto-configuration**
-- **[MyBatis Integration](references/mybatis_integration.md) - MyBatis generator and configuration examples for JDBC-based applications**
-- [REST API Reference](references/rest_api.md) - Complete REST API documentation
-- **[Data Models Guide](references/data_models.md) - COMPREHENSIVE syntax guide for both Tree and Table models with examples**
+- [Java Examples](references/java_examples.md) - SessionPool / TableSessionPool, concurrency, error handling
+- [Python Examples](references/python_examples.md) - SessionPool / TableSessionPool, threads, pandas
+- [C++ Examples](references/cpp_examples.md) - SessionPool (V2.0.11+) and Session / TableSession for older versions
+- [JDBC Examples](references/jdbc_examples.md) - Tree and table dialect URLs, batching, HikariCP
+- [Spring Boot Integration](references/spring_boot_integration.md) - Official `iotdb-spring-boot-starter`
+- [MyBatis Integration](references/mybatis_integration.md) - MyBatis / MyBatis-Plus over IoTDB JDBC
+- [REST API Reference](references/rest_api.md) - Tree model REST v2 and table model REST
+- [Data Models Guide](references/data_models.md) - Tree and table model syntax
 
 ### Scripts
 
-- [Connection Validator](scripts/validate_connection.py) - Test IoTDB connectivity
-- [Data Model Converter](scripts/convert_models.py) - Convert between tree and table models
-- [Performance Test](scripts/performance_test.py) - Benchmark connection performance
+- [Connection Validator](scripts/validate_connection.py) - Check RPC (tree/table) and REST connectivity
+- [Connection Smoke Test](scripts/performance_test.py) - Quick client-side write/query timing through a SessionPool;
+  for capacity benchmarks use the `timechodb-benchmark` skill (iot-benchmark)
 
 ### Assets
 
-- [Connection Templates](assets/connection_templates/) - Ready-to-use connection code templates
-- [Configuration Files](assets/configs/) - Sample configuration files for different environments
+- [Connection Templates](assets/connection_templates/) - Java and Python templates built on the pools

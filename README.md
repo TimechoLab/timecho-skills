@@ -6,10 +6,11 @@ A comprehensive collection of AI assistant skills for working with Apache IoTDB 
 
 ## 📚 Overview
 
-This repository contains two specialized skills designed to enhance AI assistant capabilities when helping developers work with:
+This repository contains specialized skills designed to enhance AI assistant capabilities when helping developers work with:
 
 1. **IoTDB** - A low-cost, high-performance IoT-native time-series database
 2. **TsFile** - Open-source File Format for Industrial Time-Series Datasets
+3. **TimechoDB** - Operations skills for TimechoDB: benchmarking, log analysis, Pipe sync, tiered storage, and Tree/Table model selection
 
 ## 🎯 Skills Included
 
@@ -22,10 +23,9 @@ This repository contains two specialized skills designed to enhance AI assistant
 - Multi-language support (Java, Python, C++, REST API)
 - Dual data model support (Tree Model & Table Model)
 - Connection methods:
-  - Java SessionPool (production-recommended)
+  - Java / Python SessionPool (tree model) and TableSessionPool (table model)
+  - C++ SessionPool (V2.0.11+)
   - JDBC interface
-  - Python client
-  - C++ client
   - REST API
 - Best practices for production deployments
 - Memory-efficient data reading patterns
@@ -64,6 +64,16 @@ This repository contains two specialized skills designed to enhance AI assistant
 
 **Path**: `tsfile/`
 
+### TimechoDB Skills
+
+| Skill | Purpose | Path |
+| --- | --- | --- |
+| Benchmark | Size and run iot-benchmark load tests; report throughput, latency and failures | `timechodb-benchmark/` |
+| Log Analyzer | Locate OOM, WAL/disk, compaction, slow-query and thread/file-handle problems in DataNode/ConfigNode logs | `timechodb-log-analyze/` |
+| Pipe Sync | Station-to-center sync, cascading, dual-active, SSL, compression, air-gap transfer and backlog monitoring | `timechodb-pipe-sync/` |
+| Tiered Storage | Hot/warm/cold tiers, object-storage cold tier, tier TTL and space thresholds | `timechodb-tier-storage/` |
+| Tree/Table Guide | Choose between Tree and Table models; TAG/ATTRIBUTE/FIELD mapping and model-specific SQL | `timechodb-tree-table-guide/` |
+
 ## 🚀 Getting Started
 
 ### For AI Assistants
@@ -98,7 +108,7 @@ timecho-skills/
 ├── iotdb/              # IoTDB connection and usage guide
 │   ├── SKILL.md        # Main skill documentation
 │   ├── references/     # Language-specific guides
-│   │   ├── java_examples_priority.md
+│   │   ├── java_examples.md
 │   │   ├── python_examples.md
 │   │   ├── cpp_examples.md
 │   │   ├── rest_api.md
@@ -121,6 +131,14 @@ timecho-skills/
 │   │   └── pom.xml
 │   └── scripts/        # Build and example scripts
 │
+├── timechodb-benchmark/         # iot-benchmark load testing
+├── timechodb-log-analyze/       # Log analysis and root cause location
+├── timechodb-pipe-sync/         # Pipe data sync
+├── timechodb-tier-storage/      # Tiered storage
+├── timechodb-tree-table-guide/  # Tree/Table model selection
+│   ├── SKILL.md
+│   └── references/
+│
 └── LICENSE             # Apache License 2.0
 ```
 
@@ -137,8 +155,10 @@ SessionPool sessionPool = new SessionPool.Builder()
     .maxSize(10)
     .build();
 
-try (SessionDataSet dataSet = sessionPool.executeQueryStatement("SELECT * FROM root.factory.**")) {
-    DataIterator iterator = dataSet.iterator();
+// SessionPool returns a SessionDataSetWrapper; closing it returns the session to the pool
+try (SessionDataSetWrapper wrapper = sessionPool.executeQueryStatement(
+        "SELECT temperature FROM root.factory.line1.device7 LIMIT 10")) {
+    SessionDataSet.DataIterator iterator = wrapper.iterator();
     while (iterator.next()) {
         System.out.println("Time: " + iterator.getLong(1) + ", Value: " + iterator.getFloat(2));
     }
@@ -163,7 +183,7 @@ with TsFileReader("data.tsfile") as reader:
 
 ### IoTDB Skill
 
-- Java: IoTDB Java API (SessionPool/JDBC)
+- Java: `iotdb-session` (SessionPool / TableSessionPool), `iotdb-jdbc`
 - Python: `apache-iotdb` package
 - C++: IoTDB C++ client library
 - REST: HTTP client (any language)
